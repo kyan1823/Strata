@@ -262,6 +262,13 @@ limits: [QWEN36.md](QWEN36.md).
 START-HERE.bat --setup --family qwen36 --model UD-Q4_K_XL
 ```
 
+**[HauhauCS's uncensored fine-tune](https://huggingface.co/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive)**
+of the same model is a separate choice (`--family hauhau`): one Q4_K_M file (21.2 GB, 30 GB of RAM planned for), the
+author's own conversion, so the answers are the author's rather than Qwen's. It has no MTP draft layer (the engine
+drafts nothing) and reads pictures through the same `strata-vision` helper. Measured on an RX 6650 XT 8 GB (HIP, most
+experts on the CPU): 41.2 tokens/s decode, 69.2 tokens/s prompt. The repository's other sizes are not in setup: their
+block types have not been run on this engine path.
+
 ## Adding or switching models
 
 - **In the app:** the Models page lists every model with its size and whether it fits your computer; pick one and press

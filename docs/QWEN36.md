@@ -180,6 +180,19 @@ prompt's token ids are above 65,536), and a candidate list built from the tokens
 stream (captured into the decode graph) decodes at 36 tok/s instead of 117 with this ROCm. Chunked (WY) GDN and the PCIe-assisted hybrid decode
 were not attempted.
 
+## HauhauCS's uncensored fine-tune
+
+[HauhauCS's Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive](https://huggingface.co/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive)
+is a fine-tune of the same model (Apache 2.0) that its author describes as uncensored. Setup offers its Q4_K_M file as a
+family of its own (`--family hauhau`): 21.2 GB of download, 30 GB of RAM planned for, the same engine path, pictures
+through the same reader, requests at once. Two things differ in the file. Its author converted it with the MTP block
+stripped, so there is no draft layer and setup writes `--mtp 0` (the decode speed above is with drafts; this file
+answers at the plain speed). It also stores `ssm_alpha`, `ssm_beta` and some down projections as Q4_K where the
+official file keeps F16 / Q6_K; the engine's loader reads both. Measured on an RX 6650 XT 8 GB (HIP, hybrid mode, the
+CPU picture reader): 41.2 tokens/s decode, 69.2 tokens/s prompt, and a drawn picture answered correctly. The
+repository's other sizes (Q*_K_P and IQ*_M / IQ4_NL / IQ4_XS) are not in setup: no one has run those block types on
+this engine path yet.
+
 ## Not done / limits
 
 - Eight slots at most (the window holds 8 rows); `--batch-mtp` shares those rows between slots and proposals.
