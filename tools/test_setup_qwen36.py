@@ -81,6 +81,40 @@ class Qwen36Entries(unittest.TestCase):
         self.assertEqual(setup.own_path_context(fam, 32.0), 131072)
 
 
+class HauhauEntries(unittest.TestCase):
+    """HauhauCS's uncensored fine-tune: the same engine path, a file without the MTP block, Q4_K_M only."""
+
+    REPO_H = "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
+
+    def test_pinned_and_hashed(self):
+        fam = setup.OWN_PATH_FAMILIES["hauhau"]
+        self.assertEqual(setup.HF_REVISIONS[self.REPO_H], "f12a584fecbeb5f20001130d8ecd66c9327ae685")
+        for key in ("hf", "mmproj_hf"):
+            self.assertRegex(fam[key], SHA)
+            self.assertIn(self.REPO_H, fam[key])
+        self.assertEqual(fam["arch"], "qwen35moe")
+        self.assertEqual(list(fam["models"]), ["Q4_K_M"])
+        name = fam["file"].format(q="Q4_K_M")
+        self.assertEqual(fam["sha256"][name],
+                         (21166758016, "bbef58c37ce88820be9d98b6437f1cf4bac890c947bd55fc7b68e22098574231"))
+        self.assertEqual(fam["mmproj"], "mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf")
+        self.assertEqual(fam["sha256"][fam["mmproj"]][0], 899283072)
+        for size, sha in fam["sha256"].values():
+            self.assertGreater(size, 1000)
+            self.assertRegex(sha, r"^[0-9a-f]{64}$")
+
+    def test_no_mtp_block_so_no_drafts_and_one_layer_less_of_cache(self):
+        fam = setup.OWN_PATH_FAMILIES["hauhau"]
+        self.assertEqual(fam["mtp"], 0)
+        # Qwen3.6's 11 layers (10 attention + the MTP block) without the MTP block
+        self.assertEqual(fam["kv_bytes_per_token"], setup.OWN_PATH_FAMILIES["qwen36"]["kv_bytes_per_token"] // 11 * 10)
+
+    def test_size_recommendation(self):
+        fam = setup.OWN_PATH_FAMILIES["hauhau"]
+        self.assertEqual(setup.own_path_size(fam, 24.0), "Q4_K_M")     # below its RAM need: still the only size
+        self.assertEqual(setup.own_path_size(fam, 32.0), "Q4_K_M")
+
+
 class InstallOwnPath(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -121,10 +155,10 @@ class InstallOwnPath(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def install(self, ram=64.0, vram=16.0, hip=False, **kw):
+    def install(self, ram=64.0, vram=16.0, hip=False, family="qwen36", **kw):
         gpu = {"index": 0, "count": 1, "vram_gb": vram, "name": "Test GPU"}
-        return run(setup.install_own_path, args(models_dir=str(self.root / "models"), **kw), "qwen36", gpu, hip, [],
-                   13, [], 8080, ram, None)
+        return run(setup.install_own_path, args(family=family, models_dir=str(self.root / "models"), **kw), family,
+                   gpu, hip, [], 13, [], 8080, ram, None)
 
     def test_installs_the_pinned_file_and_writes_the_config(self):
         rc, out = self.install(model="UD-Q4_K_XL", vision="no")
@@ -150,6 +184,21 @@ class InstallOwnPath(unittest.TestCase):
         self.assertEqual(self.cfg["model_name"], "qwen3.6-35b-a3b-ud-q4_k_xl")
         self.assertEqual(Path(self.cfg["exe"]).parent, self.root / "engine")
         self.assertIn(("config", "strata-qwen36-ud-q4_k_xl.json"), self.calls)
+
+    def test_the_hauhau_fine_tune_installs_without_drafts(self):
+        rc, out = self.install(model="Q4_K_M", vision="no", family="hauhau")
+        self.assertEqual(rc, 0, out)
+        gguf = (self.root / "models" / "hauhau-Q4_K_M"
+                / "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf")
+        get = [c for c in self.calls if c[0] == "get"]
+        self.assertEqual(len(get), 1)
+        self.assertEqual(get[0][1], setup.hf(HauhauEntries.REPO_H) + gguf.name)
+        a = self.cfg["args"]
+        self.assertEqual(a[a.index("--native") + 1], str(gguf))
+        self.assertEqual(a[a.index("--mtp") + 1], "0")            # no nextn block in the file
+        self.assertEqual(self.cfg["arch"], "qwen35moe")
+        self.assertEqual(self.cfg["model_name"], "qwen3.6-35b-a3b-hauhau-q4_k_m")
+        self.assertIn(("config", "strata-hauhau-q4_k_m.json"), self.calls)
 
     def test_default_size_follows_the_ram(self):
         rc, out = self.install(ram=64.0)

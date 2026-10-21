@@ -94,6 +94,7 @@ HF_REVISIONS = {
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": "5348543e0147355ac9cbcb031184a3546350988e",  # 2026-09-29
     "unsloth/Qwen3.8-Flash-Next-GGUF": "38bb39ee97821de2c9009abb7e93950eec396e66",                   # 2026-09-30
     "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",                  # 2026-10-12
+    "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive": "f12a584fecbeb5f20001130d8ecd66c9327ae685",  # 2026-04-17
     "agentionai/Qwen3.8-Flash-Next-Gyro-GGUF": "1ada08422e404aca51ab9df665f089f34c419c6b",           # 2026-10-13
 }
 
@@ -625,6 +626,20 @@ QWEN36_FILES = {
     "Qwen3.6-35B-A3B-Q8_0.gguf": (37801097504, "c1283d8b80c3e38b2735ddbc9766d3b3126f44d6c484be419d4e101d09a76131"),
     "mmproj-F16.gguf": (899283584, "71f3cbc1f7cc0f30d09d41cfa924c0060827ebc33bf15ace7e86661e856f0160"),
 }
+# HauhauCS's uncensored fine-tune of Qwen3.6-35B-A3B (Apache 2.0, the base model's license): the same architecture and
+# the same engine path (qwen35moe), but its own files.  The author converted it with the MTP block stripped (no
+# nextn_predict_layers: the engine drafts nothing, and the MTP block's KV cache is not there) and with ssm_alpha /
+# ssm_beta and some down projections stored as Q4_K, which official files keep as F16 / Q6_K.  Its Q4_K_M file was
+# loaded, prompted and answered on an RX 6650 XT 8 GB (HIP): 41.2 tokens/s decode, 69.2 tokens/s prompt, pictures
+# through the CPU reader.  Only Q4_K_M is pinned: the repository's other sizes are Q*_K_P and IQ* files, block types
+# nobody has run on this engine path yet (the sizes and SHA-256 are the Hub's LFS pointers; the SHA-256 was also
+# computed from the downloaded file and matched).
+HAUHAU_FILES = {
+    "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf":
+        (21166758016, "bbef58c37ce88820be9d98b6437f1cf4bac890c947bd55fc7b68e22098574231"),
+    "mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf":
+        (899283072, "c8e702344a81f8c226a914aa980ed6e1f604bce9374f1fed8e65c896908af414"),
+}
 OWN_PATH_FAMILIES = {
     "qwen36": {"title": "Qwen3.6-35B-A3B", "by": "Qwen; GGUFs with the MTP layer by Unsloth", "arch": "qwen35moe",
                "about": "35B mixture of experts with 3B active (256 experts, top-8): a smaller cousin of "
@@ -646,6 +661,24 @@ OWN_PATH_FAMILIES = {
                # pictures: Unsloth's mmproj (the same projector family as Flash-Next's: qwen3vl_merger) through
                # strata-vision; a parallel slot's session: its KV cache (kv_bytes_per_token) and the recurrent state of
                # the 30 GDN layers (state_gb)
+               "vision": True, "state_gb": 0.07},
+    # HauhauCS's uncensored fine-tune (HAUHAU_FILES): the same model and engine path, one 4-bit file, no MTP block
+    # (hence --mtp 0).  It is not a Flash-Next file and has no pack either, so it is installed by install_own_path like
+    # Qwen3.6 above.  "ram_gb": the file plus room for the OS and the engine (the same rule as Qwen3.6's sizes).
+    "hauhau": {"title": "Qwen3.6-35B Uncensored", "by": "HauhauCS's uncensored fine-tune", "arch": "qwen35moe",
+               "about": "its author's uncensored fine-tune of the same 35B model (3B active); one 4-bit file, 21.2 GB",
+               "hf": hf("HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"),
+               "file": "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-{q}.gguf", "tag": "hauhau-",
+               "mmproj_hf": hf("HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"),
+               "mmproj": "mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf",
+               "name": "qwen3.6-35b-a3b-hauhau",
+               "license": "Apache 2.0 (Qwen3.6-35B-A3B's): https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+               "models": {"Q4_K_M": {"about": "4-bit, the size the fine-tune was checked with here", "ram_gb": 30}},
+               "sha256": HAUHAU_FILES,
+               # 10 attention layers (no MTP block), 2 KV heads x 256, K and V in fp32: 40 KiB per context token,
+               # 1.34 GB at 32K
+               "kv_bytes_per_token": 10 * 2 * 256 * 2 * 4,
+               "mtp": 0,                     # the file has no nextn block: no drafts
                "vision": True, "state_gb": 0.07}
 }
 PREVIEW_FAMILIES = OWN_PATH_FAMILIES             # the earlier name (tools and tests that import it)
@@ -659,6 +692,7 @@ REPO_PINS = {
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": CODER_FILES,
     "unsloth/Qwen3.8-Flash-Next-GGUF": {**UNSLOTH_SHARDS, **UNSLOTH_IQ4_XS_SHARDS, **UNSLOTH_BIG_SHARDS},
     "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": QWEN36_FILES,
+    "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive": HAUHAU_FILES,
     "agentionai/Qwen3.8-Flash-Next-Gyro-GGUF": GYRO_FILES,
 }
 # EXPERIMENTAL, off by default (setup asks): a control vector shipped with the repository, see its README
