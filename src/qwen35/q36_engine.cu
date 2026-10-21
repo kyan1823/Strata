@@ -946,6 +946,33 @@ float* upload_f32(const strata::TensorInfo& t, const uint8_t* src) {
             const float d = f16_to_f32((uint16_t) (q[0] | (q[1] << 8)));
             for (int j = 0; j < 32; ++j) h[b * 32 + j] = d * (float) (int8_t) q[2 + j];
         }
+    } else if (t.type == 12 && h.size() % 256 == 0) {
+        // Q4_K (a fine-tune may quantize ssm_alpha / ssm_beta): super-blocks of 256 values in 144 bytes,
+        // an fp16 scale, an fp16 min, eight packed 6-bit scales and mins, and 256 4-bit quants, as ggml reads it
+        auto scale_min = [](int j, const uint8_t* sc, uint8_t& s, uint8_t& m) {
+            if (j < 4) { s = sc[j] & 63; m = sc[j + 4] & 63; }
+            else {
+                s = (uint8_t) ((sc[j + 4] & 0x0f) | ((sc[j - 4] >> 6) << 4));
+                m = (uint8_t) ((sc[j + 4] >> 4) | ((sc[j] >> 6) << 4));
+            }
+        };
+        for (size_t b = 0; b < h.size() / 256; ++b) {
+            const uint8_t* blk = src + b * 144;
+            const float d = f16_to_f32((uint16_t) (blk[0] | (blk[1] << 8)));
+            const float dmin = f16_to_f32((uint16_t) (blk[2] | (blk[3] << 8)));
+            const uint8_t* sc = blk + 4;
+            const uint8_t* q = blk + 16;
+            float* y = h.data() + b * 256;
+            for (int j = 0, is = 0; j < 256; j += 64, is += 2) {
+                uint8_t s0, m0, s1, m1;
+                scale_min(is + 0, sc, s0, m0);
+                scale_min(is + 1, sc, s1, m1);
+                const float d1 = d * s0, mn1 = dmin * m0, d2 = d * s1, mn2 = dmin * m1;
+                for (int l = 0; l < 32; ++l) y[j + l] = d1 * (q[l] & 0x0f) - mn1;
+                for (int l = 0; l < 32; ++l) y[j + 32 + l] = d2 * (q[l] >> 4) - mn2;
+                q += 32;
+            }
+        }
     } else {
         std::fprintf(stderr, "strata-q36: %s is %s, expected F32, BF16, F16 or Q8_0\n", t.name.c_str(), t.type_name());
         std::exit(1);
